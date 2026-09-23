@@ -1,0 +1,51 @@
+{
+  "expo": {
+    "name": "Collector",
+    "slug": "collector",
+    "version": "2.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.softcom.collector",
+      "infoPlist": {
+        "NSCameraUsageDescription": "O Collector precisa da câmera para ler códigos de barras."
+      }
+    },
+    "android": {
+      "package": "com.softcom.collector",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "backgroundColor": "#FF6E07",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ],
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-font",
+      "expo-sqlite",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "O Collector precisa da câmera para ler códigos de barras."
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "7e1b5ebf-62ff-4722-a538-668358a6efb0"
+      }
+    }
+  }
+}

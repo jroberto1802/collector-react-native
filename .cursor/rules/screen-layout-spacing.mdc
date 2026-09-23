@@ -1,0 +1,15 @@
+---
+description: Padroniza espaçamentos e ações de topo das telas React Native
+globs: src/**/*.tsx
+alwaysApply: false
+---
+
+# Layout de Telas
+
+- Use os valores compartilhados de src/theme/layout.ts em telas, sheets e modais de navegação.
+- Toda tela deve iniciar com paddingHorizontal: layout.screenHorizontalPadding.
+- Cabeçalhos devem usar paddingTop: layout.screenTopPadding.
+- Botões de voltar, menu e ações do topo devem usar layout.headerActionSize e layout.headerActionRadius.
+- Listas podem usar layout.listHorizontalPadding internamente, sem alterar o alinhamento externo da tela.
+- Não crie novos valores de padding de página sem exigência explícita do protótipo.
+- Preserve espaço inferior suficiente para sombras de botões flutuantes e para a safe area.
