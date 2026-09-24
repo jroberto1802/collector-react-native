@@ -17,24 +17,35 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { formatCurrencyBrl } from '../models/collections/CollectionItem';
 import type { Product } from '../models/products/Product';
+import {
+  PRICE_TYPE,
+  SEARCH_TYPE,
+  type PriceType,
+  type SearchType,
+} from '../constants/SettingsConstants';
 import { searchProducts } from '../database/database';
 import { colors } from '../theme/colors';
 
 type ProductSearchBottomSheetProps = {
   onClose: () => void;
   onSelect: (product: Product) => void;
+  priceType?: PriceType;
+  searchType?: SearchType;
   visible: boolean;
 };
 
 export function ProductSearchBottomSheet({
   onClose,
   onSelect,
+  priceType = PRICE_TYPE.PURCHASE,
+  searchType = SEARCH_TYPE.BARCODE,
   visible,
 }: ProductSearchBottomSheetProps) {
   const insets = useSafeAreaInsets();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Product[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const isReferenceSearch = searchType === SEARCH_TYPE.REFERENCE;
 
   useEffect(() => {
     if (!visible) {
@@ -59,7 +70,7 @@ export function ProductSearchBottomSheet({
     let cancelled = false;
     setIsSearching(true);
     const timer = setTimeout(() => {
-      void searchProducts(normalized)
+      void searchProducts(normalized, searchType)
         .then((products) => {
           if (!cancelled) {
             setResults(products);
@@ -76,7 +87,7 @@ export function ProductSearchBottomSheet({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [query, visible]);
+  }, [query, searchType, visible]);
 
   const showEmptyState = query.trim().length === 0;
 
@@ -142,16 +153,24 @@ export function ProductSearchBottomSheet({
                 ListEmptyComponent={
                   <Text style={styles.noResults}>Nenhum produto encontrado.</Text>
                 }
-                renderItem={({ item }) => (
-                  <Pressable onPress={() => onSelect(item)} style={styles.resultCard}>
-                    <Text style={styles.resultName} numberOfLines={2}>
-                      {item.name}
-                    </Text>
-                    <Text style={styles.resultMeta}>
-                      {`Cód.: ${item.productId}   Referência: ${item.barcode || item.reference || '-'}   Preço: ${formatCurrencyBrl(item.purchasePrice)}`}
-                    </Text>
-                  </Pressable>
-                )}
+                renderItem={({ item }) => {
+                  const price =
+                    priceType === PRICE_TYPE.SALE
+                      ? item.salePrice
+                      : item.purchasePrice;
+                  const meta = isReferenceSearch
+                    ? `Referência: ${item.reference || '-'}   Preço: ${formatCurrencyBrl(price)}`
+                    : `Cód.: ${item.barcode || '-'}   Preço: ${formatCurrencyBrl(price)}`;
+
+                  return (
+                    <Pressable onPress={() => onSelect(item)} style={styles.resultCard}>
+                      <Text style={styles.resultName} numberOfLines={2}>
+                        {item.name}
+                      </Text>
+                      <Text style={styles.resultMeta}>{meta}</Text>
+                    </Pressable>
+                  );
+                }}
                 showsVerticalScrollIndicator={false}
                 style={styles.list}
               />

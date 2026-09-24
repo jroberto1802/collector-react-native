@@ -2,10 +2,15 @@ import type {
   LoginDevice,
   LoginResponse,
 } from '../models/auth/LoginResponse';
+import {
+  BACKEND_TYPE,
+  detectBackendType,
+  type BackendType,
+} from './BackendType';
 import { normalizeBaseUrl } from '../utils/normalizeBaseUrl';
 
 export abstract class AppConstants {
-  static readonly appName = 'Collector';
+  static readonly appName = 'CollectorRN';
   static readonly appVersion = '3.0.0';
   static readonly authenticationUrl =
     process.env.EXPO_PUBLIC_AUTH_API_URL ??
@@ -30,6 +35,12 @@ export abstract class AppConstants {
   static authenticationToken = '';
   static productsAccessToken = '';
   static productsTokenExpiresAt = 0;
+  /** softcomshop | softshop — definido no login a partir da baseUrl */
+  static backendType: BackendType = BACKEND_TYPE.SOFTSHOP;
+
+  static get isSoftcomshop() {
+    return AppConstants.backendType === BACKEND_TYPE.SOFTCOMSHOP;
+  }
 
   static setLoginData(loginData: LoginResponse) {
     const deviceBaseUrl = normalizeBaseUrl(loginData.device.baseUrl);
@@ -52,11 +63,16 @@ export abstract class AppConstants {
     AppConstants.authenticationToken = loginData.token ?? '';
     AppConstants.productsAccessToken = '';
     AppConstants.productsTokenExpiresAt = 0;
+    AppConstants.backendType = detectBackendType(deviceBaseUrl);
 
     if (__DEV__) {
       console.info(
         '[Collector][Login] BaseURL configurada:',
         AppConstants.deviceBaseUrl,
+      );
+      console.info(
+        '[Collector][Login] Backend type:',
+        AppConstants.backendType,
       );
     }
   }
@@ -77,6 +93,7 @@ export abstract class AppConstants {
     AppConstants.authenticationToken = '';
     AppConstants.productsAccessToken = '';
     AppConstants.productsTokenExpiresAt = 0;
+    AppConstants.backendType = BACKEND_TYPE.SOFTSHOP;
   }
 
   static setProductsToken(token: string, expiresInSeconds: number) {

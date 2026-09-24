@@ -29,6 +29,7 @@ export function ProductsView({ onBack }: ProductsViewProps) {
     finishProductSync,
     goToNextPage,
     goToPreviousPage,
+    isGrade,
     isLoading,
     isProductSyncVisible,
     isSyncConfirmationVisible,
@@ -47,9 +48,20 @@ export function ProductsView({ onBack }: ProductsViewProps) {
     return (
       <View style={styles.productRow}>
         <Text style={styles.productCode}>{item.productId || item.id}</Text>
-        <Text numberOfLines={2} style={styles.productName}>
-          {item.name}
-        </Text>
+        <View style={styles.productInfo}>
+          <Text numberOfLines={2} style={styles.productName}>
+            {item.name}
+          </Text>
+          {isGrade ? (
+            <Text style={styles.gradeLine}>
+              <Text style={styles.gradeLabel}>Tamanho: </Text>
+              <Text style={styles.gradeValue}>{item.size}</Text>
+              {'   '}
+              <Text style={styles.gradeLabel}>Cor: </Text>
+              <Text style={styles.gradeValue}>{item.color}</Text>
+            </Text>
+          ) : null}
+        </View>
       </View>
     );
   }
@@ -237,11 +249,25 @@ const styles = StyleSheet.create({
     fontSize: 13,
     width: 78,
   },
+  productInfo: {
+    flex: 1,
+  },
   productName: {
     color: '#414141',
-    flex: 1,
     fontSize: 13,
+    fontWeight: '700',
     lineHeight: 18,
+  },
+  gradeLine: {
+    marginTop: 6,
+  },
+  gradeLabel: {
+    color: '#A0A0A0',
+    fontSize: 12,
+  },
+  gradeValue: {
+    color: '#414141',
+    fontSize: 12,
   },
   loadingContainer: {
     alignItems: 'center',

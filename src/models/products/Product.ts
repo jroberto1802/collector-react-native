@@ -1,3 +1,5 @@
+import { normalizeSkuAttributes } from '../../utils/skuAttributes';
+
 export type ProductSkuAttribute = {
   id: number;
   name: string;
@@ -35,6 +37,8 @@ export type ProductListItem = {
   barcode: string;
   sku: string;
   name: string;
+  size: string;
+  color: string;
 };
 
 export type ProductListPage = {
@@ -81,23 +85,6 @@ function asNumber(value: unknown) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function parseSkuAttributes(value: unknown): ProductSkuAttribute[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value.map((attribute) => {
-    const item = asRecord(attribute);
-
-    return {
-      id: asNumber(item.id),
-      name: asString(item.nome),
-      itemId: asNumber(item.item_id),
-      itemName: asString(item.item_nome),
-    };
-  });
-}
-
 function parseProduct(value: unknown): Product {
   const product = asRecord(value);
   const id = asNumber(product.id);
@@ -112,7 +99,7 @@ function parseProduct(value: unknown): Product {
     barcode: asString(product.codigo_barras),
     reference: asString(product.referencia),
     sku: asString(product.sku),
-    skuAttributes: parseSkuAttributes(product.sku_atributo),
+    skuAttributes: normalizeSkuAttributes(product.sku_atributo),
     name: asString(product.nome),
     purchasePrice: asNumber(product.preco_compra),
     salePrice: asNumber(product.preco_venda),

@@ -4,10 +4,21 @@ export type CollectionItem = {
   productId: number;
   productLocalId: number;
   barcode: string;
+  reference: string;
   sku: string;
   name: string;
   purchasePrice: number;
+  salePrice: number;
   quantity: number;
+  lot: string;
+  /** AAAA-MM-DD */
+  manufacturingDate: string;
+  /** AAAA-MM-DD */
+  expirationDate: string;
+  /** Visualização Grade — vem de sku_attributes */
+  size: string;
+  /** Visualização Grade — vem de sku_attributes */
+  color: string;
   createdAt: number;
   updatedAt: number;
 };

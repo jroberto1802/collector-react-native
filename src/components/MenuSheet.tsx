@@ -21,6 +21,7 @@ type MenuSheetProps = {
   onClose: () => void;
   onLogout: () => void;
   onOpenProducts: () => void;
+  onOpenSettings: () => void;
   onSynchronize: () => void;
   visible: boolean;
 };
@@ -48,6 +49,7 @@ export function MenuSheet({
   onClose,
   onLogout,
   onOpenProducts,
+  onOpenSettings,
   onSynchronize,
   visible,
 }: MenuSheetProps) {
@@ -126,7 +128,7 @@ export function MenuSheet({
                   description="Habilitar ou Desabilitar recursos"
                   icon="settings-outline"
                   label="Configurações"
-                  onPress={() => undefined}
+                  onPress={onOpenSettings}
                 />
                 <MenuItem
                   description="Atualiza os dados de produtos cadastrados"

@@ -31,6 +31,7 @@ type HomeViewProps = {
   onLogout: () => void;
   onOpenCollection: (collectionId: number) => void;
   onOpenProducts: () => void;
+  onOpenSettings: () => void;
 };
 
 const FILTERS: Array<{ key: CollectionFilter; label: string }> = [
@@ -45,6 +46,7 @@ export function HomeView({
   onLogout,
   onOpenCollection,
   onOpenProducts,
+  onOpenSettings,
 }: HomeViewProps) {
   const {
     cancelSync,
@@ -57,12 +59,14 @@ export function HomeView({
     logout,
     openMenu,
     openProducts,
+    openSettings,
     requestSync,
   } = useHomeViewModel({
     initialSyncRequired,
     onInitialSyncCompleted,
     onLogout,
     onOpenProducts,
+    onOpenSettings,
   });
 
   const {
@@ -191,6 +195,7 @@ export function HomeView({
         onClose={closeMenu}
         onLogout={() => void logout()}
         onOpenProducts={openProducts}
+        onOpenSettings={openSettings}
         onSynchronize={requestSync}
         visible={isMenuVisible}
       />

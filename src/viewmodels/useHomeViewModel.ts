@@ -8,6 +8,7 @@ type UseHomeViewModelParams = {
   onInitialSyncCompleted: () => void;
   onLogout: () => void;
   onOpenProducts: () => void;
+  onOpenSettings: () => void;
 };
 
 export function useHomeViewModel({
@@ -15,6 +16,7 @@ export function useHomeViewModel({
   onInitialSyncCompleted,
   onLogout,
   onOpenProducts,
+  onOpenSettings,
 }: UseHomeViewModelParams) {
   const [isMenuVisible, setMenuVisible] = useState(false);
   const [isSyncConfirmationVisible, setSyncConfirmationVisible] =
@@ -46,6 +48,10 @@ export function useHomeViewModel({
     setMenuVisible(false);
     onOpenProducts();
   }, [onOpenProducts]);
+  const openSettings = useCallback(() => {
+    setMenuVisible(false);
+    onOpenSettings();
+  }, [onOpenSettings]);
   const logout = useCallback(async () => {
     setMenuVisible(false);
     await clearStoredLoginData();
@@ -64,6 +70,7 @@ export function useHomeViewModel({
     logout,
     openMenu: () => setMenuVisible(true),
     openProducts,
+    openSettings,
     requestSync,
   };
 }

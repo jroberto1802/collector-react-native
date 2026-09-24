@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import type { ProductListItem } from '../models/products/Product';
 import { ProductRepository } from '../repositories/ProductRepository';
+import { loadAppSettings } from '../storage/settings';
 
 const PAGE_SIZE = 10;
 const productRepository = new ProductRepository();
@@ -17,6 +18,13 @@ export function useProductsViewModel() {
   const [isSyncConfirmationVisible, setSyncConfirmationVisible] =
     useState(false);
   const [isProductSyncVisible, setProductSyncVisible] = useState(false);
+  const [isGrade, setGrade] = useState(false);
+
+  useEffect(() => {
+    void loadAppSettings().then((settings) => {
+      setGrade(settings.grade);
+    });
+  }, [refreshVersion]);
 
   useEffect(() => {
     let active = true;
@@ -86,6 +94,7 @@ export function useProductsViewModel() {
     finishProductSync,
     goToNextPage: () => setPage((value) => Math.min(totalPages, value + 1)),
     goToPreviousPage: () => setPage((value) => Math.max(1, value - 1)),
+    isGrade,
     isLoading,
     isProductSyncVisible,
     isSyncConfirmationVisible,

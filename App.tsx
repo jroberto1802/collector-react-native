@@ -6,8 +6,9 @@ import { CollectionDetailView } from './src/views/CollectionDetailView';
 import { HomeView } from './src/views/HomeView';
 import { LoginView } from './src/views/LoginView';
 import { ProductsView } from './src/views/ProductsView';
+import { SettingsView } from './src/views/SettingsView';
 
-type AuthenticatedRoute = 'home' | 'products' | 'collection';
+type AuthenticatedRoute = 'home' | 'products' | 'collection' | 'settings';
 
 export default function App() {
   const [isAuthenticated, setAuthenticated] = useState(false);
@@ -42,6 +43,8 @@ export default function App() {
       {isAuthenticated ? (
         route === 'products' ? (
           <ProductsView onBack={() => setRoute('home')} />
+        ) : route === 'settings' ? (
+          <SettingsView onBack={() => setRoute('home')} />
         ) : route === 'collection' && selectedCollectionId != null ? (
           <CollectionDetailView
             collectionId={selectedCollectionId}
@@ -57,6 +60,7 @@ export default function App() {
             onLogout={handleLogout}
             onOpenCollection={openCollection}
             onOpenProducts={() => setRoute('products')}
+            onOpenSettings={() => setRoute('settings')}
           />
         )
       ) : (

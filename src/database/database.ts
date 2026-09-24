@@ -8,6 +8,14 @@ import type {
   ProductListItem,
   ProductListPage,
 } from '../models/products/Product';
+import {
+  SEARCH_TYPE,
+  type SearchType,
+} from '../constants/SettingsConstants';
+import {
+  extractGradeAttributes,
+  normalizeSkuAttributes,
+} from '../utils/skuAttributes';
 
 const DATABASE_NAME = 'collector.db';
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
@@ -82,14 +90,18 @@ const COLLECTION_ITEMS_CREATE_SQL = `
     name TEXT NOT NULL DEFAULT '',
     purchase_price REAL NOT NULL DEFAULT 0,
     quantity REAL NOT NULL DEFAULT 0,
+    lot TEXT NOT NULL DEFAULT '',
+    manufacturing_date TEXT NOT NULL DEFAULT '',
+    expiration_date TEXT NOT NULL DEFAULT '',
     created_at INTEGER NOT NULL DEFAULT 0,
-    updated_at INTEGER NOT NULL DEFAULT 0,
-    UNIQUE(collection_id, product_id)
+    updated_at INTEGER NOT NULL DEFAULT 0
   );
   CREATE INDEX IF NOT EXISTS collection_items_collection_idx
     ON collection_items (collection_id);
   CREATE INDEX IF NOT EXISTS collection_items_barcode_idx
     ON collection_items (barcode);
+  CREATE INDEX IF NOT EXISTS collection_items_product_lot_idx
+    ON collection_items (collection_id, product_id, lot, manufacturing_date, expiration_date);
 `;
 
 async function ensureCollectionItemsTable(database: SQLite.SQLiteDatabase) {
@@ -109,12 +121,39 @@ async function ensureCollectionItemsTable(database: SQLite.SQLiteDatabase) {
     'name',
     'purchase_price',
     'quantity',
+    'lot',
+    'manufacturing_date',
+    'expiration_date',
     'created_at',
     'updated_at',
   ];
-  const missingColumns = requiredColumns.filter((column) => !columnNames.has(column));
+  const missingColumns = requiredColumns.filter(
+    (column) => !columnNames.has(column),
+  );
 
-  if (missingColumns.length === 0) {
+  const indexes = await database.getAllAsync<{ name: string; sql: string | null }>(
+    `SELECT name, sql FROM sqlite_master
+     WHERE type = 'index' AND tbl_name = 'collection_items'`,
+  );
+  const hasLegacyUnique =
+    indexes.some(
+      (index) =>
+        index.sql != null &&
+        /unique/i.test(index.sql) &&
+        /product_id/i.test(index.sql),
+    ) ||
+    (
+      await database.getAllAsync<{ sql: string | null }>(
+        `SELECT sql FROM sqlite_master
+         WHERE type = 'table' AND name = 'collection_items'`,
+      )
+    ).some(
+      (row) =>
+        row.sql != null &&
+        /UNIQUE\s*\(\s*collection_id\s*,\s*product_id\s*\)/i.test(row.sql),
+    );
+
+  if (missingColumns.length === 0 && !hasLegacyUnique) {
     return;
   }
 
@@ -131,14 +170,18 @@ async function ensureCollectionItemsTable(database: SQLite.SQLiteDatabase) {
       name TEXT NOT NULL DEFAULT '',
       purchase_price REAL NOT NULL DEFAULT 0,
       quantity REAL NOT NULL DEFAULT 0,
+      lot TEXT NOT NULL DEFAULT '',
+      manufacturing_date TEXT NOT NULL DEFAULT '',
+      expiration_date TEXT NOT NULL DEFAULT '',
       created_at INTEGER NOT NULL DEFAULT 0,
-      updated_at INTEGER NOT NULL DEFAULT 0,
-      UNIQUE(collection_id, product_id)
+      updated_at INTEGER NOT NULL DEFAULT 0
     );
   `);
 
   const selectId = columnNames.has('id') ? 'id' : 'NULL';
-  const selectCollectionId = columnNames.has('collection_id') ? 'collection_id' : '0';
+  const selectCollectionId = columnNames.has('collection_id')
+    ? 'collection_id'
+    : '0';
   const selectProductId = columnNames.has('product_id') ? 'product_id' : '0';
   const selectProductLocalId = columnNames.has('product_local_id')
     ? 'product_local_id'
@@ -150,13 +193,21 @@ async function ensureCollectionItemsTable(database: SQLite.SQLiteDatabase) {
     ? 'purchase_price'
     : '0';
   const selectQuantity = columnNames.has('quantity') ? 'quantity' : '0';
+  const selectLot = columnNames.has('lot') ? 'lot' : "''";
+  const selectManufacturingDate = columnNames.has('manufacturing_date')
+    ? 'manufacturing_date'
+    : "''";
+  const selectExpirationDate = columnNames.has('expiration_date')
+    ? 'expiration_date'
+    : "''";
   const selectCreatedAt = columnNames.has('created_at') ? 'created_at' : '0';
   const selectUpdatedAt = columnNames.has('updated_at') ? 'updated_at' : '0';
 
   await database.execAsync(`
-    INSERT OR IGNORE INTO collection_items_new (
+    INSERT INTO collection_items_new (
       id, collection_id, product_id, product_local_id, barcode, sku, name,
-      purchase_price, quantity, created_at, updated_at
+      purchase_price, quantity, lot, manufacturing_date, expiration_date,
+      created_at, updated_at
     )
     SELECT
       ${selectId},
@@ -168,6 +219,9 @@ async function ensureCollectionItemsTable(database: SQLite.SQLiteDatabase) {
       ${selectName},
       ${selectPurchasePrice},
       ${selectQuantity},
+      ${selectLot},
+      ${selectManufacturingDate},
+      ${selectExpirationDate},
       ${selectCreatedAt},
       ${selectUpdatedAt}
     FROM collection_items;
@@ -178,6 +232,8 @@ async function ensureCollectionItemsTable(database: SQLite.SQLiteDatabase) {
       ON collection_items (collection_id);
     CREATE INDEX IF NOT EXISTS collection_items_barcode_idx
       ON collection_items (barcode);
+    CREATE INDEX IF NOT EXISTS collection_items_product_lot_idx
+      ON collection_items (collection_id, product_id, lot, manufacturing_date, expiration_date);
   `);
 }
 
@@ -340,19 +396,40 @@ export async function getProductsPage(
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const page = Math.min(Math.max(1, requestedPage), totalPages);
   const offset = (page - 1) * pageSize;
-  const items = await database.getAllAsync<ProductListItem>(
+  const rows = await database.getAllAsync<{
+    id: number;
+    productId: number;
+    barcode: string;
+    sku: string;
+    name: string;
+    sku_attributes: string;
+  }>(
     `SELECT
        id,
        product_id AS productId,
        barcode,
        sku,
-       name
+       name,
+       sku_attributes
      FROM products
      ${whereClause}
      ORDER BY name COLLATE NOCASE, id
      LIMIT ? OFFSET ?`,
     [...searchParams, pageSize, offset],
   );
+
+  const items: ProductListItem[] = rows.map((row) => {
+    const grade = extractGradeAttributes(row.sku_attributes);
+    return {
+      id: row.id,
+      productId: row.productId,
+      barcode: row.barcode,
+      sku: row.sku,
+      name: row.name,
+      size: grade.size,
+      color: grade.color,
+    };
+  });
 
   return {
     items,
@@ -486,13 +563,7 @@ type ProductRow = {
 };
 
 function mapProductRow(row: ProductRow): Product {
-  let skuAttributes: Product['skuAttributes'] = [];
-  try {
-    const parsed = JSON.parse(row.sku_attributes) as Product['skuAttributes'];
-    skuAttributes = Array.isArray(parsed) ? parsed : [];
-  } catch {
-    skuAttributes = [];
-  }
+  const skuAttributes = normalizeSkuAttributes(row.sku_attributes);
 
   return {
     id: row.id,
@@ -513,12 +584,22 @@ function mapProductRow(row: ProductRow): Product {
 }
 
 export async function findProductByBarcode(barcode: string): Promise<Product | null> {
+  return findProductBySearchCode(barcode, SEARCH_TYPE.BARCODE);
+}
+
+export async function findProductBySearchCode(
+  code: string,
+  searchType: SearchType,
+): Promise<Product | null> {
   const database = await getDatabase();
-  const normalized = barcode.trim();
+  const normalized = code.trim();
 
   if (!normalized) {
     return null;
   }
+
+  const column =
+    searchType === SEARCH_TYPE.REFERENCE ? 'reference' : 'barcode';
 
   const row = await database.getFirstAsync<ProductRow>(
     `SELECT
@@ -537,19 +618,19 @@ export async function findProductByBarcode(barcode: string): Promise<Product | n
        manufacturer,
        supplier
      FROM products
-     WHERE barcode = ?
-        OR reference = ?
-        OR CAST(product_id AS TEXT) = ?
+     WHERE ${column} = ? COLLATE NOCASE
      LIMIT 1`,
-    normalized,
-    normalized,
     normalized,
   );
 
   return row ? mapProductRow(row) : null;
 }
 
-export async function searchProducts(query: string, limit = 40): Promise<Product[]> {
+export async function searchProducts(
+  query: string,
+  searchType: SearchType = SEARCH_TYPE.BARCODE,
+  limit = 40,
+): Promise<Product[]> {
   const database = await getDatabase();
   const normalized = query.trim();
 
@@ -558,6 +639,9 @@ export async function searchProducts(query: string, limit = 40): Promise<Product
   }
 
   const searchValue = `%${normalized}%`;
+  const primaryColumn =
+    searchType === SEARCH_TYPE.REFERENCE ? 'reference' : 'barcode';
+
   const rows = await database.getAllAsync<ProductRow>(
     `SELECT
        id,
@@ -575,17 +659,20 @@ export async function searchProducts(query: string, limit = 40): Promise<Product
        manufacturer,
        supplier
      FROM products
-     WHERE name LIKE ? COLLATE NOCASE
-        OR barcode LIKE ? COLLATE NOCASE
-        OR reference LIKE ? COLLATE NOCASE
-        OR sku LIKE ? COLLATE NOCASE
-        OR CAST(product_id AS TEXT) LIKE ?
-     ORDER BY name COLLATE NOCASE, id
+     WHERE ${primaryColumn} LIKE ? COLLATE NOCASE
+        OR name LIKE ? COLLATE NOCASE
+     ORDER BY
+       CASE
+         WHEN ${primaryColumn} = ? COLLATE NOCASE THEN 0
+         WHEN ${primaryColumn} LIKE ? COLLATE NOCASE THEN 1
+         ELSE 2
+       END,
+       name COLLATE NOCASE,
+       id
      LIMIT ?`,
     searchValue,
     searchValue,
-    searchValue,
-    searchValue,
+    normalized,
     searchValue,
     limit,
   );
@@ -599,25 +686,40 @@ type CollectionItemRow = {
   product_id: number;
   product_local_id: number;
   barcode: string;
+  reference?: string | null;
   sku: string;
   name: string;
   purchase_price: number;
+  sale_price?: number | null;
   quantity: number;
+  lot: string;
+  manufacturing_date: string;
+  expiration_date: string;
   created_at: number;
   updated_at: number;
+  sku_attributes?: string | null;
 };
 
 function mapCollectionItem(row: CollectionItemRow): CollectionItem {
+  const grade = extractGradeAttributes(row.sku_attributes ?? '');
+
   return {
     id: row.id,
     collectionId: row.collection_id,
     productId: row.product_id,
     productLocalId: row.product_local_id,
     barcode: row.barcode,
+    reference: row.reference ?? '',
     sku: row.sku,
     name: row.name,
     purchasePrice: row.purchase_price ?? 0,
+    salePrice: row.sale_price ?? 0,
     quantity: row.quantity,
+    lot: row.lot ?? '',
+    manufacturingDate: row.manufacturing_date ?? '',
+    expirationDate: row.expiration_date ?? '',
+    size: grade.size,
+    color: grade.color,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -633,6 +735,9 @@ const COLLECTION_ITEM_SELECT = `
   name,
   purchase_price,
   quantity,
+  lot,
+  manufacturing_date,
+  expiration_date,
   created_at,
   updated_at
 `;
@@ -660,9 +765,33 @@ export async function listCollectionItems(
          ),
          0
        ) AS purchase_price,
+       COALESCE(
+         (
+           SELECT p.sale_price
+           FROM products p
+           WHERE p.product_id = ci.product_id
+           LIMIT 1
+         ),
+         0
+       ) AS sale_price,
        ci.quantity,
+       ci.lot,
+       ci.manufacturing_date,
+       ci.expiration_date,
        ci.created_at,
-       ci.updated_at
+       ci.updated_at,
+       (
+         SELECT p.sku_attributes
+         FROM products p
+         WHERE p.product_id = ci.product_id
+         LIMIT 1
+       ) AS sku_attributes,
+       (
+         SELECT p.reference
+         FROM products p
+         WHERE p.product_id = ci.product_id
+         LIMIT 1
+       ) AS reference
      FROM collection_items ci
      WHERE ci.collection_id = ?
      ORDER BY ci.updated_at DESC, ci.id DESC`,
@@ -672,26 +801,48 @@ export async function listCollectionItems(
   return rows.map(mapCollectionItem);
 }
 
+export type CollectionItemLotFields = {
+  lot?: string;
+  manufacturingDate?: string;
+  expirationDate?: string;
+};
+
 export async function addOrUpdateCollectionItem(input: {
   collectionId: number;
   product: Product;
   quantity: number;
+  lot?: string;
+  manufacturingDate?: string;
+  expirationDate?: string;
 }): Promise<CollectionItem> {
   const database = await getDatabase();
   const now = Date.now();
   const quantity = input.quantity;
+  const lot = (input.lot ?? '').trim();
+  const manufacturingDate = (input.manufacturingDate ?? '').trim();
+  const expirationDate = (input.expirationDate ?? '').trim();
 
   if (!(quantity > 0)) {
     throw new Error('Informe uma quantidade válida.');
   }
 
   await database.withExclusiveTransactionAsync(async (transaction) => {
-    const existing = await transaction.getFirstAsync<{ id: number; quantity: number }>(
+    const existing = await transaction.getFirstAsync<{
+      id: number;
+      quantity: number;
+    }>(
       `SELECT id, quantity
        FROM collection_items
-       WHERE collection_id = ? AND product_id = ?`,
+       WHERE collection_id = ?
+         AND product_id = ?
+         AND lot = ?
+         AND manufacturing_date = ?
+         AND expiration_date = ?`,
       input.collectionId,
       input.product.productId,
+      lot,
+      manufacturingDate,
+      expirationDate,
     );
 
     if (existing) {
@@ -711,8 +862,9 @@ export async function addOrUpdateCollectionItem(input: {
       await transaction.runAsync(
         `INSERT INTO collection_items (
            collection_id, product_id, product_local_id, barcode, sku, name,
-           purchase_price, quantity, created_at, updated_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           purchase_price, quantity, lot, manufacturing_date, expiration_date,
+           created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         input.collectionId,
         input.product.productId,
         input.product.id,
@@ -721,6 +873,9 @@ export async function addOrUpdateCollectionItem(input: {
         input.product.name,
         input.product.purchasePrice,
         quantity,
+        lot,
+        manufacturingDate,
+        expirationDate,
         now,
         now,
       );
@@ -740,9 +895,18 @@ export async function addOrUpdateCollectionItem(input: {
   const item = await database.getFirstAsync<CollectionItemRow>(
     `SELECT ${COLLECTION_ITEM_SELECT}
      FROM collection_items
-     WHERE collection_id = ? AND product_id = ?`,
+     WHERE collection_id = ?
+       AND product_id = ?
+       AND lot = ?
+       AND manufacturing_date = ?
+       AND expiration_date = ?
+     ORDER BY id DESC
+     LIMIT 1`,
     input.collectionId,
     input.product.productId,
+    lot,
+    manufacturingDate,
+    expirationDate,
   );
 
   if (!item) {
@@ -750,6 +914,41 @@ export async function addOrUpdateCollectionItem(input: {
   }
 
   return mapCollectionItem(item);
+}
+
+export async function updateCollectionItem(
+  itemId: number,
+  input: {
+    quantity: number;
+    lot?: string;
+    manufacturingDate?: string;
+    expirationDate?: string;
+  },
+): Promise<void> {
+  if (!(input.quantity > 0)) {
+    throw new Error('Informe uma quantidade válida.');
+  }
+
+  const database = await getDatabase();
+  const lot = (input.lot ?? '').trim();
+  const manufacturingDate = (input.manufacturingDate ?? '').trim();
+  const expirationDate = (input.expirationDate ?? '').trim();
+
+  await database.runAsync(
+    `UPDATE collection_items
+     SET quantity = ?,
+         lot = ?,
+         manufacturing_date = ?,
+         expiration_date = ?,
+         updated_at = ?
+     WHERE id = ?`,
+    input.quantity,
+    lot,
+    manufacturingDate,
+    expirationDate,
+    Date.now(),
+    itemId,
+  );
 }
 
 export async function updateCollectionItemQuantity(
